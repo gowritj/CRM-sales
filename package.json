@@ -1,0 +1,16 @@
+{
+  "name": "loan-sales-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A responsive loan sales and call centre CRM demo",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "test": "node --test",
+    "seed": "node --env-file-if-exists=.env scripts/seed.js",
+    "reset-db": "node --env-file-if-exists=.env scripts/reset-db.js"
+  },
+  "engines": {
+    "node": ">=22.9"
+  }
+}
