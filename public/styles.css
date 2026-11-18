@@ -24,6 +24,10 @@ body { margin: 0; color: var(--ink); background: var(--canvas); font-size: 13px;
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .boot-screen { height: 100vh; display: grid; place-content: center; justify-items: center; gap: 14px; color: var(--muted); }
+.boot-error { padding: 24px; text-align: center; }
+.boot-error h1 { margin: 0; color: var(--ink); font: 700 20px Manrope,sans-serif; }
+.boot-error p { max-width: 420px; margin: 0 0 6px; line-height: 1.6; }
+.boot-error .btn { margin-top: 6px; }
 .brand-mark { width: 35px; height: 35px; display: grid; place-items: center; color: #fff; background: var(--blue); border-radius: 12px 12px 12px 4px; font: 800 24px Manrope; }
 .app-shell { display: flex; min-height: 100vh; }
 .sidebar { width: 244px; flex: 0 0 244px; background: var(--navy); color: #a7b0c5; display: flex; flex-direction: column; padding: 21px 14px 14px; }

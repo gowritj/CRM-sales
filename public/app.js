@@ -1,4 +1,4 @@
-import { api } from "./modules/api.js";
+import { api, fetchWithTimeout } from "./modules/api.js";
 import { avatar, badge, esc, initials, monthlyCallVolume, money, personCell, statusClass } from "./modules/formatters.js";
 
 const app = document.getElementById("app");
@@ -65,9 +65,13 @@ async function loadLeadPage() {
     search: state.search,
     status: state.filters.leads === "All statuses" ? "" : state.filters.leads
   });
-  const response = await fetch(`/api/leads?${params}`, { credentials: "same-origin" });
+  const response = await fetchWithTimeout(`/api/leads?${params}`, { credentials: "same-origin" });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(body.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   state.leadPageRows = body;
   state.leadPagination = {
     total: Number(response.headers.get("X-Total-Count") || body.length),
@@ -104,6 +108,11 @@ function showLogin(errorMessage = "") {
         </form>
       </section>
     </main>`;
+}
+
+function showBootError(error) {
+  document.body.classList.toggle("mobile", mobileRoute);
+  app.innerHTML = `<main class="boot-screen boot-error" role="alert"><div class="brand-mark">!</div><h1>Workspace unavailable</h1><p>${esc(error.message || "The app could not connect to the server.")}</p><button class="btn btn-primary" type="button" data-action="retry-boot">Retry</button></main>`;
 }
 
 function renderShell() {
@@ -539,6 +548,7 @@ document.addEventListener("click", async (event) => {
   const action = button.dataset.action;
   if (action === "backdrop-close" && event.target !== button) return;
   if (action === "close-modal" || action === "backdrop-close") { document.querySelector(".modal-backdrop")?.remove(); return; }
+  if (action === "retry-boot") { await boot(); return; }
   if (action === "close-more") {
     if (event.target === button) { state.moreOpen = false; renderShell(); }
     return;
@@ -780,15 +790,22 @@ async function boot() {
     const result = await api("/api/auth/me");
     state.user = result.user;
     await refresh();
-  } catch {
-    showLogin();
+  } catch (error) {
+    if (error.status === 401) {
+      state.user = null;
+      showLogin();
+    } else {
+      showBootError(error);
+    }
   }
-  const input = document.createElement("input");
-  input.id = "csv-file-input";
-  input.type = "file";
-  input.accept = ".csv,text/csv";
-  input.hidden = true;
-  document.body.append(input);
+  if (!document.getElementById("csv-file-input")) {
+    const input = document.createElement("input");
+    input.id = "csv-file-input";
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.hidden = true;
+    document.body.append(input);
+  }
 }
 
 boot();

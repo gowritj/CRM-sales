@@ -10,6 +10,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(ROOT, "uploads"));
 const PORT = Number(process.env.PORT || 3000);
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const loginAttempts = new Map();
 const loginWindow = 15 * 60 * 1000;
 const maxLoginFailures = 5;
@@ -43,6 +44,11 @@ function getLoginAttemptState(key, now = Date.now()) {
   if (attempts.length) loginAttempts.set(key, attempts);
   else loginAttempts.delete(key);
   return attempts;
+}
+
+function secureCookieForRequest(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
+  return forwardedProto === "https" || Boolean(req.socket.encrypted);
 }
 
 function validAssignee(id) {
@@ -176,7 +182,7 @@ function handleLogin(req, res, body) {
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
   store.createSession(token, user.id, expiresAt);
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  const secure = process.env.NODE_ENV === "production" && secureCookieForRequest(req) ? "; Secure" : "";
   res.setHeader("Set-Cookie", `crm_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure}`);
   return json(res, 200, { user: publicUser(user) });
 }
@@ -245,7 +251,7 @@ async function handleApi(req, res, url) {
   if (route === "/api/auth/login" && req.method === "POST") return handleLogin(req, res, await readBody(req));
   if (route === "/api/auth/logout" && req.method === "POST") {
     store.deleteSession(requestToken(req));
-    const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+    const secure = process.env.NODE_ENV === "production" && secureCookieForRequest(req) ? "; Secure" : "";
     res.setHeader("Set-Cookie", `crm_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
     return json(res, 200, { ok: true });
   }

@@ -20,12 +20,13 @@ async function unusedPort() {
   return port;
 }
 
-async function request(pathname, { method = "GET", body, cookie } = {}) {
+async function request(pathname, { method = "GET", body, cookie, forwardedProto } = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method,
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
-      ...(cookie ? { Cookie: cookie } : {})
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(forwardedProto ? { "X-Forwarded-Proto": forwardedProto } : {})
     },
     body: body ? JSON.stringify(body) : undefined
   });
@@ -33,8 +34,8 @@ async function request(pathname, { method = "GET", body, cookie } = {}) {
   return { status: response.status, body: await response.json(), cookie: setCookie?.split(";")[0], setCookie };
 }
 
-async function login(email, password) {
-  const result = await request("/api/auth/login", { method: "POST", body: { email, password } });
+async function login(email, password, forwardedProto) {
+  const result = await request("/api/auth/login", { method: "POST", body: { email, password }, forwardedProto });
   return { ...result, session: result.cookie };
 }
 
@@ -53,7 +54,7 @@ before(async () => {
   const port = await unusedPort();
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT: String(port), DATABASE_PATH: path.join(dataDirectory, "test.db"), UPLOAD_DIR: path.join(dataDirectory, "uploads") },
+    env: { ...process.env, NODE_ENV: "production", PORT: String(port), DATABASE_PATH: path.join(dataDirectory, "test.db"), UPLOAD_DIR: path.join(dataDirectory, "uploads") },
     stdio: ["ignore", "pipe", "pipe"]
   });
   let output = "";
@@ -79,16 +80,38 @@ after(async () => {
 });
 
 test("admin and staff can perform their assigned CRM workflows", async () => {
-  assert.equal((await fetch(baseUrl)).status, 200);
+  const home = await fetch(baseUrl);
+  assert.equal(home.status, 200);
+  const html = await home.text();
+  assert.match(html, /type="module" src="\/app\.js"/);
+  const policy = home.headers.get("content-security-policy");
+  assert.match(policy, /script-src 'self'/);
+  assert.match(policy, /style-src 'self'[^;]*https:\/\/fonts\.googleapis\.com/);
+  assert.match(policy, /font-src 'self' https:\/\/fonts\.gstatic\.com/);
+  for (const [asset, type] of [["/app.js", "text/javascript"], ["/modules/api.js", "text/javascript"], ["/modules/formatters.js", "text/javascript"], ["/styles.css", "text/css"]]) {
+    const response = await fetch(`${baseUrl}${asset}`);
+    assert.equal(response.status, 200, `${asset} should be included and served`);
+    assert.match(response.headers.get("content-type"), new RegExp(type));
+  }
   assert.equal((await fetch(`${baseUrl}/mobile`)).status, 200);
+
+  const authStart = performance.now();
+  const unauthenticated = await request("/api/auth/me");
+  assert.equal(unauthenticated.status, 401);
+  assert.equal(unauthenticated.body.error, "Not signed in");
+  assert.ok(performance.now() - authStart < 1500, "unauthenticated auth check should return promptly");
 
   const denied = await login("admin@northstar.demo", "incorrect");
   assert.equal(denied.status, 401);
 
-  const admin = await login("admin@northstar.demo", "admin123");
+  const localProductionLogin = await login("admin@northstar.demo", "admin123");
+  assert.equal(localProductionLogin.status, 200);
+  assert.doesNotMatch(localProductionLogin.setCookie, /;\s*Secure/i);
+  const admin = await login("admin@northstar.demo", "admin123", "https, http");
   assert.equal(admin.status, 200);
   assert.equal(admin.body.user.role, "admin");
   assert.match(admin.setCookie, /HttpOnly/);
+  assert.match(admin.setCookie, /;\s*Secure/i);
   const leads = await request("/api/leads", { cookie: admin.session });
   assert.equal(leads.body.length, 24);
   const searchPage = await fetch(`${baseUrl}/api/leads?page=1&pageSize=4&search=Sophie`, { headers: { Cookie: admin.session } });
